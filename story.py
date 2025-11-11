@@ -1,6 +1,7 @@
 import streamlit as st
 import google.generativeai as genai
 from datetime import datetime
+import time
 
 def normalize(text):
     return text.strip().lower()
@@ -17,23 +18,72 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS for better styling
+# Professional CSS styling
 st.markdown("""
 <style>
-    .history-item {
-        padding: 8px;
-        margin: 5px 0;
-        border-radius: 5px;
-        background-color: #f0f2f6;
-        border-left: 4px solid #ff6b6b;
+    .sidebar-chat-item {
+        padding: 8px 12px;
+        margin: 2px 0;
+        border-radius: 6px;
+        border: none;
+        background: transparent;
+        text-align: left;
+        width: 100%;
+        font-size: 0.9em;
         cursor: pointer;
+        transition: all 0.2s ease;
     }
-    .history-item:hover {
-        background-color: #e6e9ef;
+    .sidebar-chat-item:hover {
+        background-color: #f8f9fa;
+        border-left: 2px solid #4f46e5;
     }
-    .history-time {
+    .new-chat-btn {
+        background: #e8f4f8;
+        color: #1e40af;
+        border: 1px solid #bfdbfe;
+        padding: 10px 16px;
+        border-radius: 8px;
+        font-weight: 600;
+        margin-bottom: 15px;
+        transition: all 0.2s ease;
+    }
+    .new-chat-btn:hover {
+        background: #dbeafe;
+        border-color: #93c5fd;
+    }
+    .sidebar-header {
         font-size: 0.8em;
-        color: #666;
+        font-weight: 600;
+        color: #6b7280;
+        margin: 15px 0 8px 0;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .trash-btn {
+        background: #fee2e2;
+        color: #dc2626;
+        border: 1px solid #fecaca;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 0.7em;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    .trash-btn:hover {
+        background: #fecaca;
+        transform: scale(1.1);
+    }
+    @keyframes dotAnimation {
+        0%, 20% { opacity: 0; }
+        50% { opacity: 1; }
+        100% { opacity: 0; }
+    }
+    .thinking-dots {
+        display: inline-block;
+    }
+    .thinking-dots::after {
+        content: '...';
+        animation: dotAnimation 1.5s infinite;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -48,75 +98,144 @@ if "messages" not in st.session_state:
 if "search_history" not in st.session_state:
     st.session_state.search_history = []
 
-if "current_chat" not in st.session_state:
-    st.session_state.current_chat = []
+if "chat_sessions" not in st.session_state:
+    st.session_state.chat_sessions = {
+        "current": {
+            "id": "current",
+            "name": "New Chat",
+            "messages": [],
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "preview": "Start a new conversation"
+        }
+    }
 
-# Sidebar with tabs
-st.sidebar.title("Navigation")
+if "current_chat_id" not in st.session_state:
+    st.session_state.current_chat_id = "current"
 
-# Create tabs
-tab1, tab2 = st.sidebar.tabs(["💡 Examples", "📜 History"])
+if "thinking" not in st.session_state:
+    st.session_state.thinking = False
 
-# Tab 1: Example Questions
-with tab1:
-    st.header("💡 Example Questions")
-    example_questions = [
-        "Tell me a story from Karnataka",
-        "What is the significance of Diwali?",
-        "Famous food of Kerala?",
-        "Tell me about Rajasthan's folk dances",
-        "What is the story behind Holi?",
-        "Traditional clothing of Tamil Nadu"
-    ]
-
-    for question in example_questions:
-        if st.button(question, key=f"example_{question}", use_container_width=True):
-            st.session_state.messages.append({"role": "user", "content": question})
-            st.rerun()
-
-# Tab 2: Search History
-with tab2:
-    st.header("📜 Search History")
+# Professional Sidebar
+with st.sidebar:
+    st.markdown("### Chat Assistant")
     
-    if not st.session_state.search_history:
-        st.info("No search history yet. Start asking questions to build your history!")
+    # New Chat Button with pale professional color
+    if st.button("New Chat", key="new_chat_btn", use_container_width=True):
+        # Save current chat if it has messages
+        if st.session_state.messages:
+            chat_id = f"chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            # Generate short chat name from first message
+            first_message = next((msg["content"] for msg in st.session_state.messages if msg["role"] == "user"), "Chat")
+            # Extract key words for short name
+            words = first_message.split()[:3]  # Take first 3 words
+            chat_name = " ".join(words)
+            if len(chat_name) > 20:
+                chat_name = chat_name[:18] + "..."
+            
+            st.session_state.chat_sessions[chat_id] = {
+                "id": chat_id,
+                "name": chat_name,
+                "messages": st.session_state.messages.copy(),
+                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "preview": st.session_state.messages[-1]["content"][:50] + "..." if st.session_state.messages else "New chat"
+            }
+        
+        # Clear current chat
+        st.session_state.messages = []
+        st.session_state.current_chat_id = "current"
+        st.session_state.chat_sessions["current"] = {
+            "id": "current",
+            "name": "New Chat",
+            "messages": [],
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "preview": "Start a new conversation"
+        }
+        st.session_state.thinking = False
+        st.rerun()
+    
+    st.markdown('<div class="sidebar-header">Chat History</div>', unsafe_allow_html=True)
+    
+    # Display Chat History
+    chat_items = []
+    
+    # Add all chats except current empty one if it's empty
+    for chat_id, chat_data in st.session_state.chat_sessions.items():
+        if chat_id == "current" and not chat_data["messages"]:
+            continue  # Skip empty current chat
+        chat_items.append((chat_id, chat_data))
+    
+    # Sort by creation time (newest first)
+    chat_items.sort(key=lambda x: x[1]["created_at"], reverse=True)
+    
+    if not chat_items:
+        st.info("No chat history yet")
     else:
-        # Clear history button
-        if st.button("🗑️ Clear All History", use_container_width=True):
-            st.session_state.search_history = []
-            st.rerun()
-        
-        st.subheader("Recent Searches")
-        
-        # Display history in reverse order (newest first)
-        for i, history_item in enumerate(reversed(st.session_state.search_history)):
-            col1, col2 = st.columns([3, 1])
+        # Display chat history items with delete buttons
+        for chat_id, chat_data in chat_items:
+            is_active = chat_id == st.session_state.current_chat_id
+            
+            # Create columns for chat name and delete button
+            col1, col2 = st.columns([4, 1])
             
             with col1:
-                # Create a clickable history item
+                # Chat item button - only show the short name
                 if st.button(
-                    f"**{history_item['query']}**\n\n"
-                    f"_{history_item['timestamp']}_",
-                    key=f"history_{i}",
+                    chat_data['name'],
+                    key=f"chat_{chat_id}",
                     use_container_width=True
                 ):
-                    # When clicked, add this query to current chat
-                    st.session_state.messages.append({"role": "user", "content": history_item['query']})
+                    st.session_state.current_chat_id = chat_id
+                    st.session_state.messages = chat_data["messages"].copy()
+                    st.session_state.thinking = False
                     st.rerun()
             
             with col2:
-                # Delete button for each history item
-                if st.button("❌", key=f"delete_{i}"):
-                    st.session_state.search_history.pop(len(st.session_state.search_history) - 1 - i)
+                # Small trash icon button
+                if st.button("🗑️", key=f"delete_{chat_id}", help="Delete this chat"):
+                    # Don't delete if it's the current active chat with messages
+                    if chat_id == st.session_state.current_chat_id:
+                        # Switch to new chat if deleting current
+                        st.session_state.current_chat_id = "current"
+                        st.session_state.messages = []
+                        st.session_state.thinking = False
+                    
+                    del st.session_state.chat_sessions[chat_id]
                     st.rerun()
-            
-            st.divider()
 
-# Main chat area
-# Display previous messages
+# Main chat area - Remove "New Chat" text from middle
+current_chat_name = st.session_state.chat_sessions[st.session_state.current_chat_id]['name']
+if current_chat_name != "New Chat":
+    st.subheader(f"💬 {current_chat_name}")
+
+# Display messages for current chat
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
+
+# Show thinking message if processing
+if st.session_state.thinking:
+    with st.chat_message("assistant"):
+        # Create a simple animated thinking message
+        thinking_placeholder = st.empty()
+        
+        # Simple animation with updating text
+        dots = ["", ".", "..", "..."]
+        for i in range(12):  # Show for max 12 cycles (about 3 seconds)
+            if not st.session_state.thinking:
+                break
+            thinking_placeholder.markdown(f"Thinking{dots[i % 4]}")
+            time.sleep(0.25)
+
+# Show empty state if no messages
+if not st.session_state.messages and not st.session_state.thinking:
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown("""
+        <div style='text-align: center; padding: 40px; color: #6b7280;'>
+            <h3>🎭 Welcome to Culture Bot!</h3>
+            <p>Start a conversation about Indian culture, festivals, food, or folk tales.</p>
+        </div>
+        """, unsafe_allow_html=True)
 
 # Cultural instruction
 instruction = (
@@ -135,23 +254,29 @@ if prompt := st.chat_input("Ask about Indian culture..."):
         history_item = {
             "query": prompt,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "response_preview": ""  # We'll update this after getting the response
+            "response_preview": ""
         }
         st.session_state.search_history.append(history_item)
     
     # Display user message
     st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
+    
+    # Set thinking state
+    st.session_state.thinking = True
+    st.rerun()
 
+# Generate response if thinking state is active
+if st.session_state.thinking:
     try:
         # Build conversation history
         history_for_gemini = []
-        for msg in st.session_state.messages[:-1]:
+        for msg in st.session_state.messages[:-1]:  # Exclude the last user message
             role = "user" if msg["role"] == "user" else "model"
             history_for_gemini.append({"role": role, "parts": [msg["content"]]})
 
         # Combine instruction + prompt for context
-        full_prompt = f"{instruction}\nUser question: {prompt}"
+        full_prompt = f"{instruction}\nUser question: {st.session_state.messages[-1]['content']}"
 
         # Generate response
         response = model.generate_content(
@@ -159,7 +284,7 @@ if prompt := st.chat_input("Ask about Indian culture..."):
         )
         response_text = response.text
         
-        # Update the latest history item with response preview
+        # Update search history with response preview
         if st.session_state.search_history:
             latest_item = st.session_state.search_history[-1]
             preview = response_text[:100] + "..." if len(response_text) > 100 else response_text
@@ -168,27 +293,27 @@ if prompt := st.chat_input("Ask about Indian culture..."):
     except Exception as e:
         response_text = f"⚠️ Error: {str(e)}"
 
-    # Display model response
+    # Display model response and clear thinking state
     with st.chat_message("assistant"):
         st.markdown(response_text)
 
     st.session_state.messages.append({"role": "assistant", "content": response_text})
     
-    # Force a rerun to update the history sidebar
+    # Update current chat session
+    current_chat = st.session_state.chat_sessions[st.session_state.current_chat_id]
+    current_chat["messages"] = st.session_state.messages.copy()
+    
+    # Update chat name with short version if it's the first message
+    if len(st.session_state.messages) == 2:  # user + assistant
+        # Create short name from first 3 words
+        words = st.session_state.messages[0]["content"].split()[:3]
+        chat_name = " ".join(words)
+        if len(chat_name) > 20:
+            chat_name = chat_name[:18] + "..."
+        current_chat["name"] = chat_name
+    
+    # Clear thinking state
+    st.session_state.thinking = False
+    
+    # Force a rerun to update the sidebar and remove thinking message
     st.rerun()
-
-# Additional sidebar information
-st.sidebar.markdown("---")
-st.sidebar.markdown("### ℹ️ About")
-st.sidebar.info(
-    "This bot helps you explore rich Indian cultural heritage through "
-    "stories, facts, and information about festivals, food, and traditions."
-)
-
-# Display statistics in sidebar
-if st.session_state.search_history:
-    st.sidebar.markdown("### 📊 Statistics")
-    st.sidebar.metric(
-        "Total Searches", 
-        len(st.session_state.search_history)
-    )
