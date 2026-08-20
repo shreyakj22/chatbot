@@ -2,6 +2,8 @@
 
 An AI-powered chatbot that generates culturally relevant, localized stories using context-aware conversational workflows — built to preserve and share local culture through storytelling.
 
+
+
 ## Features
 - Context-aware conversation flow for natural, ongoing storytelling
 - Generates culturally relevant, localized stories based on user input
@@ -15,8 +17,9 @@ An AI-powered chatbot that generates culturally relevant, localized stories usin
 ## Getting Started
 
 ### Prerequisites
-- Python installed
+- Python installed (see `.python-version` for the exact version used)
 - A Google API key (for the generative AI model)
+- [uv](https://github.com/astral-sh/uv) package manager (or use `requirements.txt` with pip as an alternative)
 
 ### Setup
 
@@ -27,6 +30,13 @@ An AI-powered chatbot that generates culturally relevant, localized stories usin
    ```
 
 2. Install dependencies
+
+   Using uv (recommended, matches `uv.lock`):
+   ```bash
+   uv sync
+   ```
+
+   Or using pip:
    ```bash
    pip install -r requirements.txt
    ```
@@ -37,11 +47,15 @@ An AI-powered chatbot that generates culturally relevant, localized stories usin
    cp .env.example .env
    ```
 
-4. Run the bot
+4. Build the memory/vectorstore (run once before first use)
    ```bash
-   python app.py
+   python create_memory_for_llm.py
    ```
-   (adjust filename if your entry point is different, e.g. `main.py`)
+
+5. Run the bot
+   ```bash
+   python main.py
+   ```
 
 ## How It Works
 The bot takes a user's prompt or topic, maintains conversational context across the interaction, and generates a localized story shaped by cultural context rather than generic output.
